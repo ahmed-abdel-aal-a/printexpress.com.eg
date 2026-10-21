@@ -13,11 +13,11 @@ interface Offer {
   custom_url: string | null;
 }
 
+import { API_URL } from "@/lib/api";
+
 async function fetchOffers(): Promise<Offer[]> {
   try {
-    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2080/api/v1';
-    const baseUrl = rawApiUrl.replace(/\/v1\/?$/, '');
-    const res = await fetch(`${baseUrl}/v1/storefront/offers`, {
+    const res = await fetch(`${API_URL}/storefront/offers`, {
       next: { tags: ['offers'] },
     });
     
@@ -75,7 +75,7 @@ export default async function OffersSection() {
           }
 
           // Image handling (WebP URL)
-          const rawApi = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2080/api/v1';
+          const rawApi = API_URL;
           const backendBase = rawApi.replace(/\/api(\/.*)?$/, '');
           const rawImagePath = typeof offer.image_path === 'string' ? offer.image_path : (offer.image_path?.desktop || '');
           const imageUrl = rawImagePath.startsWith('http') 

@@ -1,6 +1,13 @@
 import { DEFAULT_MIN_PRICE, DEFAULT_MAX_PRICE } from "./constants";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2080/api/v1';
+const getApiUrl = () => {
+    if (typeof window !== 'undefined') {
+        return process.env.NEXT_PUBLIC_API_URL || 'https://printexpress.com.eg/api/v1';
+    }
+    return process.env.INTERNAL_API_URL || 'http://127.0.0.1:2080/api/v1';
+};
+
+export const API_URL = getApiUrl();
 
 export async function fetchCategories() {
     try {

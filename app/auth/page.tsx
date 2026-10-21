@@ -6,7 +6,7 @@ import { useAppContext } from "@/context/AppContext";
 import { useRouter } from "next/navigation";
 import { Copy, CheckCircle2, AlertCircle } from "lucide-react";
 
-import { login, register } from "@/lib/api";
+import { login, register, API_URL } from "@/lib/api";
 
 export default function AuthPage() {
   const { setUser, refreshCart } = useAppContext();
@@ -52,7 +52,7 @@ export default function AuthPage() {
 
   const handleSocialLogin = async (provider: 'google' | 'facebook') => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/storefront/auth/social/${provider}/redirect`);
+      const response = await fetch(`${API_URL}/storefront/auth/social/${provider}/redirect`);
       const data = await response.json();
       if (data.url) {
         window.location.href = data.url;

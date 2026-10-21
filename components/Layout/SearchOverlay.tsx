@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Loader2, Package, FolderOpen, ArrowLeft, Printer, X } from "lucide-react";
 import { getProductImageUrl, getTranslatedText } from "@/lib/utils";
+import { API_URL } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -23,7 +24,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
       
       // Fetch store categories if not fetched
       if (categories.length === 0) {
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2080/api/v1'}/storefront/categories`)
+        fetch(`${API_URL}/storefront/categories`)
           .then(res => res.json())
           .then(json => setCategories(json.data || []))
           .catch(console.error);
@@ -31,7 +32,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
 
       // Fetch printing categories and subcategories if not fetched
       if (printingTypes.length === 0) {
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2080/api/v1'}/storefront/printing-product-types`)
+        fetch(`${API_URL}/storefront/printing-product-types`)
           .then(res => res.json())
           .then(json => {
             const data = Array.isArray(json) ? json : (json.data || []);
@@ -54,7 +55,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
 
     const timer = setTimeout(() => {
       setIsSearching(true);
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2080/api/v1'}/storefront/products?search=${encodeURIComponent(trimmed)}`)
+      fetch(`${API_URL}/storefront/products?search=${encodeURIComponent(trimmed)}`)
         .then(res => res.json())
         .then(data => {
           setProductSuggestions(data.data?.slice(0, 5) || []);
