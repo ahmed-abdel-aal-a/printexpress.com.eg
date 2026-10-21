@@ -116,6 +116,13 @@
       "static/chunks/main-app-ed56d450442f2c73.js",
       "static/chunks/app/font-preview/page-a75a0c786f9da282.js"
     ],
+    "/print station/page": [
+      "static/chunks/webpack-1ea540f0e26c2248.js",
+      "static/chunks/fd9d1056-7c983f13bb3a97a7.js",
+      "static/chunks/117-f4758d73b218a287.js",
+      "static/chunks/main-app-ed56d450442f2c73.js",
+      "static/chunks/app/print station/page-bc3cb772a2766676.js"
+    ],
     "/print-station/page": [
       "static/chunks/webpack-1ea540f0e26c2248.js",
       "static/chunks/fd9d1056-7c983f13bb3a97a7.js",
@@ -129,13 +136,6 @@
       "static/chunks/319-071c58bff44a1f8b.js",
       "static/chunks/697-fde4ce5945125758.js",
       "static/chunks/app/print-station/page-81ce3ed52d90517a.js"
-    ],
-    "/print station/page": [
-      "static/chunks/webpack-1ea540f0e26c2248.js",
-      "static/chunks/fd9d1056-7c983f13bb3a97a7.js",
-      "static/chunks/117-f4758d73b218a287.js",
-      "static/chunks/main-app-ed56d450442f2c73.js",
-      "static/chunks/app/print station/page-bc3cb772a2766676.js"
     ],
     "/blog/page": [
       "static/chunks/webpack-1ea540f0e26c2248.js",
