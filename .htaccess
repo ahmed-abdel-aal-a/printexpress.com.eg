@@ -2,11 +2,11 @@
     RewriteEngine On
     RewriteBase /
 
-    # 1. Forward all API calls directly to Laravel Backend (Port 2080)
-    RewriteRule ^api/(.*)$ http://127.0.0.1:2080/api/$1 [P,L]
+    # 1. Forward all API calls directly to Laravel Backend (Port 8000)
+    RewriteRule ^api/(.*)$ http://127.0.0.1:8000/api/$1 [P,L]
 
-    # 2. Forward storage media calls directly to Laravel Backend (Port 2080)
-    RewriteRule ^storage/(.*)$ http://127.0.0.1:2080/storage/$1 [P,L]
+    # 2. Forward storage media calls directly to Laravel Backend (Port 8000)
+    RewriteRule ^storage/(.*)$ http://127.0.0.1:8000/storage/$1 [P,L]
 
     # 3. Forward all other frontend requests to Next.js Storefront (Port 2000)
     RewriteCond %{REQUEST_URI} !^/api
