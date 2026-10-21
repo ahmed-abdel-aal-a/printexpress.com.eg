@@ -3,6 +3,7 @@ const path = require('path')
 const dir = path.join(__dirname)
 
 process.env.NODE_ENV = 'production'
+process.env.INTERNAL_API_URL = process.env.INTERNAL_API_URL || 'http://127.0.0.1:8000/api/v1'
 process.chdir(__dirname)
 
 const currentPort = parseInt(process.env.PORT, 10) || 3000
