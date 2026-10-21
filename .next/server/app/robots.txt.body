@@ -1,0 +1,19 @@
+User-Agent: *
+Allow: /
+Disallow: /private/
+Disallow: /api/
+
+User-Agent: ChatGPT-User
+User-Agent: OAI-SearchBot
+User-Agent: PerplexityBot
+User-Agent: Anthropic-ai
+User-Agent: Claude-Web
+User-Agent: Google-Extended
+Allow: /product/
+Allow: /blog/
+Allow: /
+Disallow: /checkout/
+Disallow: /cart/
+Disallow: /api/
+
+Sitemap: https://printexpress.com/sitemap.xml

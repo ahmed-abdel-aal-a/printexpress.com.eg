@@ -1,0 +1,5 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Force allow access to _next folder which is usually blocked by default
+  RewriteRule ^_next/.* - [L]
+</IfModule>

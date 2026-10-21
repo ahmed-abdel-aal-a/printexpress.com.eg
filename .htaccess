@@ -1,0 +1,11 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # 1. Forward all API calls directly to Laravel Backend (Port 2080)
+    RewriteRule ^api/(.*)$ http://127.0.0.1:2080/api/$1 [P,L]
+
+    # 2. Forward all other frontend requests to Next.js Storefront (Port 2000)
+    RewriteCond %{REQUEST_URI} !^/api
+    RewriteRule ^(.*)$ http://127.0.0.1:2000/$1 [P,L]
+</IfModule>
