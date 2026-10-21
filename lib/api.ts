@@ -199,7 +199,8 @@ export async function getUser(token: string) {
 export async function fetchBlogPosts(page: number | string = 1, limit: number = 12) {
     try {
         const res = await fetch(`${API_URL}/storefront/blog-posts?page=${page}&limit=${limit}`, {
-            next: { revalidate: 3600, tags: ['blog'] }
+            headers: { 'Connection': 'close' },
+            cache: 'no-store'
         });
         if (!res.ok) {
             return { data: [], current_page: 1, last_page: 1, total: 0 };
@@ -216,7 +217,8 @@ export const fetchBlogPostByIdOrSlug = cache(async (idOrSlug: string) => {
     try {
         const cleanParam = decodeURIComponent(idOrSlug).trim();
         const res = await fetch(`${API_URL}/storefront/blog-posts/${encodeURIComponent(cleanParam)}`, {
-            next: { revalidate: 3600, tags: ['blog'] }
+            headers: { 'Connection': 'close' },
+            cache: 'no-store'
         });
         if (!res.ok) return null;
         return await res.json();

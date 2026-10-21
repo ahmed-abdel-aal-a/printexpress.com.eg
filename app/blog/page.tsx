@@ -29,7 +29,8 @@ export const metadata: Metadata = {
   },
 };
 
-export const revalidate = 3600;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default async function BlogPage() {
   const { data: posts, current_page, last_page, total } = await fetchBlogPosts(1, 24);
