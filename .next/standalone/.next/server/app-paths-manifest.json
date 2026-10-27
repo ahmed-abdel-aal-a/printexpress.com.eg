@@ -1,8 +1,8 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
+  "/auth/callback/page": "app/auth/callback/page.js",
   "/account/page": "app/account/page.js",
   "/api/revalidate/route": "app/api/revalidate/route.js",
-  "/auth/callback/page": "app/auth/callback/page.js",
   "/auth/page": "app/auth/page.js",
   "/checkout/error/page": "app/checkout/error/page.js",
   "/checkout/page": "app/checkout/page.js",
@@ -11,11 +11,11 @@
   "/font-preview/page": "app/font-preview/page.js",
   "/print station/page": "app/print station/page.js",
   "/print-station/page": "app/print-station/page.js",
-  "/sitemap.xml/route": "app/sitemap.xml/route.js",
   "/robots.txt/route": "app/robots.txt/route.js",
-  "/blog/page": "app/blog/page.js",
-  "/blog/[id]/page": "app/blog/[id]/page.js",
+  "/sitemap.xml/route": "app/sitemap.xml/route.js",
   "/page": "app/page.js",
+  "/blog/page": "app/blog/page.js",
   "/shop/page": "app/shop/page.js",
+  "/blog/[id]/page": "app/blog/[id]/page.js",
   "/product/[id]/page": "app/product/[id]/page.js"
 }
