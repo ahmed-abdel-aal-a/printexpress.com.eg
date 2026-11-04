@@ -16,61 +16,87 @@ export const usePrintConfig = () => {
   const [config, setConfig] = useState<PrintOrderState>(initialState);
   const [currentStep, setCurrentStep] = useState<number>(0);
   
-  // Abort controller for live pricing
+  // Abort controller and request tracking for live pricing
   const abortControllerRef = useRef<AbortController | null>(null);
+  const activeRequestIdRef = useRef<number>(0);
+  const [isCalculating, setIsCalculating] = useState<boolean>(false);
+  const [pricingData, setPricingData] = useState<any>(null);
 
-  // Fetch product types and details is usually done at the page level, 
-  // but if needed we expose it here or let components handle it.
-  
-  // Pricing Mutation
-  const pricingMutation = useMutation({
-    mutationFn: async (payload: { printing_type_id: number, quantity: number, selectedOptions: Record<number, SelectedOption>, width_mm?: number, length_mm?: number, image_count?: number, signal?: AbortSignal }) => {
-      const formattedOptions = Object.values(payload.selectedOptions).map(opt => ({
-        value_id: opt.value_id,
-        multiplier_value: opt.multiplier_value
-      }));
-      return calculateLivePrice({
-        printing_type_id: payload.printing_type_id,
-        quantity: payload.quantity,
-        selected_options: formattedOptions,
-        width_mm: payload.width_mm,
-        length_mm: payload.length_mm,
-        image_count: payload.image_count,
-      }, payload.signal);
-    }
-  });
-
-  // Debounced API call for live pricing
+  // Debounced API call for live pricing with AbortController Spinner Trap protection
   useEffect(() => {
-    if (!config.printingTypeId) return;
+    if (!config.printingTypeId) {
+      setIsCalculating(false);
+      return;
+    }
 
-    const timer = setTimeout(() => {
+    // Immediately flag calculation as pending when inputs change (locks UI during debounce)
+    setIsCalculating(true);
+
+    const timer = setTimeout(async () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort(); // Cancel previous request
       }
-      abortControllerRef.current = new AbortController();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const currentReqId = ++activeRequestIdRef.current;
 
-      pricingMutation.mutate({
-        printing_type_id: config.printingTypeId!,
-        quantity: config.quantity,
-        selectedOptions: config.selectedOptions,
-        width_mm: config.width_mm,
-        length_mm: config.length_mm,
-        image_count: config.image_count,
-        signal: abortControllerRef.current.signal,
-      });
-    }, 500); // 500ms debounce as requested
+      try {
+        const formattedOptions = Object.values(config.selectedOptions).map(opt => ({
+          value_id: opt.value_id,
+          multiplier_value: opt.multiplier_value
+        }));
+
+        const data = await calculateLivePrice({
+          printing_type_id: config.printingTypeId!,
+          quantity: config.quantity,
+          selected_options: formattedOptions,
+          width_mm: config.width_mm,
+          length_mm: config.length_mm,
+          image_count: config.image_count,
+        }, controller.signal);
+
+        // Only update state if this is still the active, non-canceled request
+        if (currentReqId === activeRequestIdRef.current) {
+          setPricingData(data);
+          setIsCalculating(false);
+        }
+      } catch (err: any) {
+        // [Architectural Fix: The AbortController Spinner Trap]
+        // Do NOT set isCalculating(false) if the error is due to abort/cancellation,
+        // because a newer request is already in-flight or debouncing!
+        if (
+          err?.name === 'CanceledError' || 
+          err?.code === 'ERR_CANCELED' || 
+          err?.name === 'AbortError' ||
+          currentReqId !== activeRequestIdRef.current
+        ) {
+          return;
+        }
+
+        // Only reset spinner on genuine network/server errors for the active request
+        if (currentReqId === activeRequestIdRef.current) {
+          setIsCalculating(false);
+        }
+      }
+    }, 500); // 500ms debounce
 
     return () => clearTimeout(timer);
   }, [config.printingTypeId, config.quantity, config.selectedOptions, config.width_mm, config.length_mm, config.image_count]);
 
+  const cancelPendingPricing = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  }, []);
+
   // Expose Pricing Details explicitly
-  const pricingDetails = pricingMutation.data || {
+  const pricingDetails = pricingData || {
     subtotal: 0,
     discount_amount: 0,
     tax_amount: 0,
     final_total: 0,
     final_price_egp: 0,
+    production_days: 0,
     physical_weight_kg: 0,
     volumetric_weight_kg: 0,
     billable_weight_kg: 0,
@@ -167,7 +193,7 @@ export const usePrintConfig = () => {
     nextStep,
     prevStep,
     pricingDetails,
-    isCalculating: pricingMutation.isPending,
+    isCalculating,
     updateMainCategory,
     updatePrintingType,
     updateConfig,
@@ -176,6 +202,7 @@ export const usePrintConfig = () => {
     updateQuantity,
     updateDimensions,
     resetConfig,
+    cancelPendingPricing,
     submitPrintOrder,
     prepareOrderPayload,
   };

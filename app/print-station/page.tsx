@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { PageTransition } from "@/components/UI/Animations";
 import { usePrintConfig } from "../../hooks/usePrintConfig";
 import { 
@@ -36,6 +36,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { DynamicOptions } from "./components/DynamicOptions";
 import { FinishingOptions } from "./components/FinishingOptions";
 import { CategorizedUploader } from "./components/CategorizedUploader";
+import { SmartQuantityCounter } from "./components/SmartQuantityCounter";
+import { PrintingAttribute } from "../../types/print-station";
 import { useQuery } from "@tanstack/react-query";
 import { checkFileStatus, getPrintingProductTypes, getPrintingTypeDetails, addPrintJobToCart } from "../../services/api/printingApi";
 import { ConfirmModal } from "@/components/UI/ConfirmModal";
@@ -75,10 +77,38 @@ const getStaticIcon = (iconName: string | null) => {
   return Printer;
 };
 
+const checkConditionalRules = (
+  attr: PrintingAttribute,
+  selectedOptions: Record<number, any>,
+  allAttributes: PrintingAttribute[]
+): boolean => {
+  if (!attr.conditional_rules) return true;
+  try {
+    const rules = typeof attr.conditional_rules === 'string' 
+      ? JSON.parse(attr.conditional_rules) 
+      : attr.conditional_rules;
+    if (rules.show_if) {
+      for (const [key, expectedValue] of Object.entries(rules.show_if)) {
+        const parentAttr = allAttributes.find((a) => a.name === key);
+        if (parentAttr) {
+          const selection = selectedOptions[parentAttr.id];
+          if (!selection) return false;
+          const selectedVal = parentAttr.values?.find((v) => v.id === selection.value_id);
+          if (selectedVal?.value !== expectedValue) return false;
+        }
+      }
+    }
+    return true;
+  } catch {
+    return true;
+  }
+};
+
 export default function PrintStation() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [fileStatus, setFileStatus] = useState<string | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [activeStepId, setActiveStepId] = useState<'specs' | 'finishing' | 'upload'>('specs');
   const { setIsCartOpen, refreshCart, sessionId } = useAppContext();
   
   const { 
@@ -96,6 +126,7 @@ export default function PrintStation() {
     prevStep,
     isCalculating,
     pricingDetails,
+    cancelPendingPricing,
     resetConfig,
   } = usePrintConfig();
 
@@ -142,7 +173,174 @@ export default function PrintStation() {
 
   const shouldShowBottomBox = currentStep >= 2 && !isKeyboardOpen;
 
+  // 1. Fetch Product Types (Main Categories)
+  const { data: productTypes, isLoading: loadingProductTypes, error } = useQuery({
+    queryKey: ['printingProductTypes'],
+    queryFn: getPrintingProductTypes,
+  });
+
+  // 2. Fetch Selected Printing Type Details (Attributes, Rules, etc.)
+  const { data: activePrintingType, isLoading: loadingPrintingType } = useQuery({
+    queryKey: ['printingType', config.printingTypeId],
+    queryFn: () => getPrintingTypeDetails(config.printingTypeId!),
+    enabled: !!config.printingTypeId,
+  });
+
+  const printingTypeObj = activePrintingType ? (activePrintingType.data || activePrintingType) : null;
+  const allAttributes: PrintingAttribute[] = useMemo(() => {
+    return printingTypeObj?.attributes || [];
+  }, [printingTypeObj]);
+
+  // Dynamic Finishing Attributes filtered by current selected options
+  const visibleFinishingAttributes = useMemo(() => {
+    if (!printingTypeObj || allAttributes.length === 0) return [];
+    const finishingAttributes = allAttributes.filter((attr) => attr.step === "finishing");
+    return finishingAttributes.filter((attr) => 
+      checkConditionalRules(attr, config.selectedOptions, allAttributes)
+    );
+  }, [
+    printingTypeObj, 
+    allAttributes, 
+    config.selectedOptions, 
+    config.quantity, 
+    config.width_mm, 
+    config.length_mm
+  ]);
+
+  const hasFinishingStep = visibleFinishingAttributes.length > 0;
+
+  // Active Wizard Steps for Selected Product (Dynamic Flow)
+  const productWizardSteps = useMemo(() => {
+    if (!printingTypeObj) return [];
+    const steps: { id: 'specs' | 'finishing' | 'upload'; label: string }[] = [
+      { id: 'specs', label: 'مواصفات الطباعة' },
+    ];
+
+    if (hasFinishingStep) {
+      steps.push({ id: 'finishing', label: 'خيارات ما بعد الطباعة (التشطيب)' });
+    }
+
+    steps.push({ id: 'upload', label: 'رفع الملفات والملاحظات' });
+
+    return steps;
+  }, [printingTypeObj, hasFinishingStep]);
+
+  // Step Desynchronization Guard: If current step vanished from active steps, reset to 'specs' immediately!
+  useEffect(() => {
+    if (productWizardSteps.length > 0) {
+      const stepExists = productWizardSteps.some((s) => s.id === activeStepId);
+      if (!stepExists) {
+        setActiveStepId('specs');
+      }
+    }
+  }, [productWizardSteps, activeStepId]);
+
+  // ⚡ Cascading Auto-Pruning: Delete stale options whose conditions are no longer met (handles A -> B -> C cascade)
+  useEffect(() => {
+    if (!printingTypeObj || allAttributes.length === 0) return;
+
+    let hasPruned = false;
+    let currentOptions: Record<number, any> = { ...config.selectedOptions };
+
+    let passPruned = true;
+    let iterations = 0;
+    const maxIterations = allAttributes.length; // Guard against circular dependencies
+
+    while (passPruned && iterations < maxIterations) {
+      passPruned = false;
+      iterations++;
+
+      for (const attr of allAttributes) {
+        if (currentOptions[attr.id]) {
+          const isValid = checkConditionalRules(attr, currentOptions, allAttributes);
+          if (!isValid) {
+            // Shallow clone without this attribute to avoid mutating references
+            const nextOptions = { ...currentOptions };
+            delete nextOptions[attr.id];
+            currentOptions = nextOptions;
+            passPruned = true;
+            hasPruned = true;
+          }
+        }
+      }
+    }
+
+    if (hasPruned) {
+      updateConfig({ selectedOptions: currentOptions });
+    }
+  }, [config.selectedOptions, config.quantity, config.width_mm, config.length_mm, printingTypeObj, allAttributes, updateConfig]);
+
+  const currentWizardStep = productWizardSteps.find((s) => s.id === activeStepId) || productWizardSteps[0];
+  const currentWizardStepId = currentWizardStep?.id || 'specs';
+  const currentWizardStepIndex = Math.max(0, productWizardSteps.findIndex((s) => s.id === currentWizardStepId));
+
+  // Flush and Clamp Quantity to ensure validity when advancing or submitting
+  const ensureValidQuantity = () => {
+    const minQty = Math.max(1, printingTypeObj?.min_quantity || 1);
+    const maxQty = (printingTypeObj?.max_quantity && Number(printingTypeObj.max_quantity) > 0) 
+      ? Number(printingTypeObj.max_quantity) 
+      : Infinity;
+    const stepQty = Math.max(1, printingTypeObj?.quantity_step || 1);
+    const currentVal = config.quantity;
+
+    if (isNaN(currentVal) || currentVal < minQty) {
+      updateQuantity(minQty, minQty);
+      return minQty;
+    }
+
+    if (currentVal > maxQty) {
+      const offset = maxQty - minQty;
+      const remainder = offset % stepQty;
+      const validMax = maxQty - remainder;
+      updateQuantity(validMax, minQty);
+      return validMax;
+    }
+
+    const offset = currentVal - minQty;
+    const remainder = offset % stepQty;
+    if (remainder !== 0) {
+      let rounded = minQty + (Math.round(offset / stepQty) * stepQty);
+      if (rounded > maxQty) {
+        rounded = minQty + (Math.floor(offset / stepQty) * stepQty);
+      }
+      updateQuantity(rounded, minQty);
+      return rounded;
+    }
+
+    return currentVal;
+  };
+
+  const handlePrevWizardStep = () => {
+    const currentIdx = productWizardSteps.findIndex((s) => s.id === currentWizardStepId);
+    if (currentIdx > 0) {
+      setActiveStepId(productWizardSteps[currentIdx - 1].id);
+    } else {
+      setCurrentStep(1);
+      setActiveStepId('specs');
+    }
+  };
+
+  const handleNextWizardStep = () => {
+    if (currentWizardStepId === 'specs') {
+      ensureValidQuantity();
+    }
+    const currentIdx = productWizardSteps.findIndex((s) => s.id === currentWizardStepId);
+    if (currentIdx >= 0 && currentIdx < productWizardSteps.length - 1) {
+      setActiveStepId(productWizardSteps[currentIdx + 1].id);
+    } else {
+      handleCheckout();
+    }
+  };
+
   const isStepValid = () => {
+    if (currentStep < 2) return true;
+    if (currentWizardStepId === 'specs') {
+      const minQty = Math.max(1, printingTypeObj?.min_quantity || 1);
+      const maxQty = (printingTypeObj?.max_quantity && Number(printingTypeObj.max_quantity) > 0) 
+        ? Number(printingTypeObj.max_quantity) 
+        : Infinity;
+      if (!config.quantity || config.quantity < minQty || config.quantity > maxQty) return false;
+    }
     return true;
   };
 
@@ -168,30 +366,21 @@ export default function PrintStation() {
     if (currentStep > 1) {
       setIsConfirmModalOpen(true);
     } else {
+      setActiveStepId('specs');
       resetConfig();
     }
   };
 
-  // 1. Fetch Product Types (Main Categories)
-  const { data: productTypes, isLoading: loadingProductTypes, error } = useQuery({
-    queryKey: ['printingProductTypes'],
-    queryFn: getPrintingProductTypes,
-  });
-
-  // 2. Fetch Selected Printing Type Details (Attributes, Rules, etc.)
-  const { data: activePrintingType, isLoading: loadingPrintingType } = useQuery({
-    queryKey: ['printingType', config.printingTypeId],
-    queryFn: () => getPrintingTypeDetails(config.printingTypeId!),
-    enabled: !!config.printingTypeId,
-  });
-
   const handleCategorySelect = (productType: any) => {
+    setActiveStepId('specs');
     updateMainCategory(productType.id);
   };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const preparePayload = () => {
+    const validQty = ensureValidQuantity();
+
     const formattedOptions = Object.values(config.selectedOptions).map(opt => ({
       value_id: opt.value_id,
       multiplier_value: opt.multiplier_value
@@ -203,7 +392,7 @@ export default function PrintStation() {
 
     return {
       printing_type_id: config.printingTypeId!,
-      quantity: config.quantity,
+      quantity: validQty,
       selected_options: formattedOptions,
       width_mm: config.width_mm,
       length_mm: config.length_mm,
@@ -215,7 +404,8 @@ export default function PrintStation() {
   };
 
   const handleAddToCart = async () => {
-    if (!isStepValid() || isSubmitting) return;
+    if (!isStepValid() || isSubmitting || isCalculating) return;
+    cancelPendingPricing();
     setIsSubmitting(true);
     try {
       const payload = preparePayload();
@@ -223,6 +413,7 @@ export default function PrintStation() {
       // Success
       await refreshCart();
       toast.success('تم إضافة الطلب إلى السلة بنجاح! 🎉');
+      setActiveStepId('specs');
       resetConfig();
       setIsCartOpen(true);
     } catch (error: any) {
@@ -233,7 +424,8 @@ export default function PrintStation() {
   };
 
   const handleCheckout = async () => {
-    if (!isStepValid() || isSubmitting) return;
+    if (!isStepValid() || isSubmitting || isCalculating) return;
+    cancelPendingPricing();
     setIsSubmitting(true);
     try {
       const payload = preparePayload();
@@ -246,7 +438,7 @@ export default function PrintStation() {
     }
   };
 
-  const canProceedToPayment = fileStatus !== 'processing' && !isSubmitting;
+  const canProceedToPayment = fileStatus !== 'processing' && !isSubmitting && !isCalculating;
 
   return (
     <PageTransition>
@@ -352,7 +544,10 @@ export default function PrintStation() {
                     {(Array.isArray(productTypes) ? productTypes : (productTypes?.data || []))?.find((c: any) => c.id === config.mainCategoryId)?.printing_types?.map((type: any) => (
                       <button
                         key={type.id}
-                        onClick={() => updatePrintingType(type.id, type.min_quantity || 1)}
+                        onClick={() => {
+                          setActiveStepId('specs');
+                          updatePrintingType(type.id, type.min_quantity || 1);
+                        }}
                         className={`p-4 md:p-6 rounded-3xl border-2 text-right transition-all flex flex-col gap-2 relative overflow-hidden group ${
                           config.printingTypeId === type.id
                             ? "border-yellow-400 bg-yellow-400/5 shadow-[0_0_20px_rgba(250,204,21,0.1)]"
@@ -375,45 +570,42 @@ export default function PrintStation() {
               </motion.div>
             )}
 
-            {/* DYNAMIC STEPS (2 to 4) */}
-            {currentStep > 1 && activePrintingType && (
+            {/* DYNAMIC PRODUCT WIZARD */}
+            {currentStep > 1 && printingTypeObj && (
               <motion.div
-                key={`step-${currentStep}`}
+                key={`wizard-step-${currentWizardStepId}`}
                 initial={{ opacity: 0, x: 50 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -50 }}
                 className="flex-1"
               >
-                {currentStep === 2 && (
+                {currentWizardStepId === 'specs' && (
                    <div className="flex md:hidden items-center justify-between mb-6">
-                      <span className="text-yellow-400 font-bold">{((activePrintingType?.data || activePrintingType) || activePrintingType)?.name}</span>
-                      <button onClick={() => setCurrentStep(1)} className="text-sm text-gray-400 underline">تغيير النوع</button>
+                      <span className="text-yellow-400 font-bold">{printingTypeObj?.name}</span>
+                      <button onClick={() => { setCurrentStep(1); setActiveStepId('specs'); }} className="text-sm text-gray-400 underline">
+                        تغيير النوع
+                      </button>
                    </div>
                 )}
                 
-                {currentStep === 2 && (
+                {currentWizardStepId === 'specs' && (
                   <div className="flex flex-col gap-6">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                       <span className="w-8 h-8 rounded-full bg-yellow-400 text-black flex items-center justify-center font-black">3</span>
                       مواصفات الطباعة
                     </h2>
-                    <div className="p-6 rounded-3xl border border-white/10 bg-[#111111]">
-                      <label className="block text-sm font-bold text-gray-400 mb-2">الكمية المطلوبة</label>
-                      <input 
-                        type="number" 
-                        min={((activePrintingType?.data || activePrintingType) || activePrintingType)?.min_quantity || 1}
-                        step={((activePrintingType?.data || activePrintingType) || activePrintingType)?.quantity_step || 1}
-                        value={config.quantity}
-                        onChange={(e) => {
-                          const minQty = ((activePrintingType?.data || activePrintingType) || activePrintingType)?.min_quantity || 1;
-                          const val = parseInt(e.target.value) || minQty;
-                          updateQuantity(val, minQty);
-                        }}
-                        className="w-full bg-[#1a1a1a] text-white p-4 rounded-xl border border-white/10 outline-none focus:border-yellow-400 font-bold text-xl"
-                      />
-                    </div>
+                    
+                    {/* Smart Quantity Counter Component */}
+                    <SmartQuantityCounter 
+                      quantity={config.quantity}
+                      minQuantity={printingTypeObj?.min_quantity || 1}
+                      maxQuantity={printingTypeObj?.max_quantity}
+                      quantityStep={printingTypeObj?.quantity_step || 1}
+                      onChange={(newQty) => updateQuantity(newQty, printingTypeObj?.min_quantity || 1)}
+                    />
+
                     <DynamicOptions 
-                      attributes={((activePrintingType?.data || activePrintingType) || activePrintingType)?.attributes || []}
+                      attributes={allAttributes}
                       config={config} 
                       updateOption={updateOption} 
                       removeOption={removeOption}
@@ -422,14 +614,14 @@ export default function PrintStation() {
                   </div>
                 )}
 
-                {currentStep === 3 && (
+                {currentWizardStepId === 'finishing' && (
                   <div className="flex flex-col gap-6">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                       <span className="w-8 h-8 rounded-full bg-yellow-400 text-black flex items-center justify-center font-black">4</span>
                       خيارات ما بعد الطباعة (التشطيب)
                     </h2>
                     <FinishingOptions 
-                      attributes={((activePrintingType?.data || activePrintingType) || activePrintingType)?.attributes || []}
+                      attributes={allAttributes}
                       config={config} 
                       updateOption={updateOption}
                       removeOption={removeOption}
@@ -437,14 +629,16 @@ export default function PrintStation() {
                   </div>
                 )}
 
-                {currentStep === 4 && (
+                {currentWizardStepId === 'upload' && (
                   <div className="flex flex-col gap-6">
                     <h2 className="text-xl font-bold flex items-center gap-2">
-                      <span className="w-8 h-8 rounded-full bg-yellow-400 text-black flex items-center justify-center font-black">5</span>
+                      <span className="w-8 h-8 rounded-full bg-yellow-400 text-black flex items-center justify-center font-black">
+                        {hasFinishingStep ? 5 : 4}
+                      </span>
                       رفع الملفات والملاحظات
                     </h2>
                     <CategorizedUploader 
-                      printingType={((activePrintingType?.data || activePrintingType) || activePrintingType)!}
+                      printingType={printingTypeObj!}
                       config={config}
                       updateConfig={updateConfig}
                       sessionId={sessionId}
@@ -467,24 +661,34 @@ export default function PrintStation() {
           </AnimatePresence>
 
           {/* WIZARD NAVIGATION CONTROLS */}
-          {currentStep > 1 && activePrintingType && (
+          {currentStep > 1 && printingTypeObj && (
              <div className="mt-auto pt-8 flex items-center justify-between pb-8">
                 <button 
-                  onClick={prevStep}
+                  onClick={handlePrevWizardStep}
                   className="flex items-center gap-2 px-6 py-3 rounded-xl border border-white/10 bg-[#111111] text-white hover:bg-white/5 transition-colors font-bold"
                 >
                   <ArrowRight size={18} /> السابق
                 </button>
                 
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4].map((_, i) => (
-                    <div key={i} className={`h-2 rounded-full transition-all ${i + 1 === currentStep ? "w-8 bg-yellow-400" : "w-2 bg-white/20"}`} />
-                  ))}
+                {/* Dynamic Stepper Dots */}
+                <div className="flex gap-2 items-center">
+                  {productWizardSteps.map((step) => {
+                    const isActive = step.id === currentWizardStepId;
+                    return (
+                      <div 
+                        key={step.id} 
+                        title={step.label}
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          isActive ? "w-8 bg-yellow-400" : "w-2 bg-white/20"
+                        }`} 
+                      />
+                    );
+                  })}
                 </div>
 
-                {currentStep < 4 ? (
+                {currentWizardStepIndex < productWizardSteps.length - 1 ? (
                   <button 
-                    onClick={nextStep}
+                    onClick={handleNextWizardStep}
                     disabled={!isStepValid()}
                     className="flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-black hover:bg-gray-200 transition-colors font-bold disabled:opacity-20 disabled:cursor-not-allowed"
                   >
@@ -496,7 +700,13 @@ export default function PrintStation() {
                     disabled={!canProceedToPayment}
                     className="flex items-center gap-2 px-6 py-3 rounded-xl bg-yellow-400 text-black font-black hover:bg-yellow-300 transition-colors shadow-lg shadow-yellow-400/20 disabled:opacity-50"
                   >
-                    إتمام الطلب <CheckCircle size={18} />
+                    {isSubmitting || isCalculating ? (
+                      <Loader2 className="w-5 h-5 animate-spin text-black" />
+                    ) : (
+                      <>
+                        <span>إتمام الطلب</span> <CheckCircle size={18} />
+                      </>
+                    )}
                   </button>
                 )}
              </div>
@@ -634,10 +844,31 @@ export default function PrintStation() {
                   )}
                   
                   {/* EDD Section (Estimated Delivery Date) */}
-                  {pricingDetails?.production_days && (
-                    <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex flex-col gap-1">
-                       <span className="text-blue-400 font-bold text-sm">تاريخ التسليم المتوقع (EDD)</span>
-                       <span className="text-blue-100 text-xs">يحتاج هذا الطلب إلى {pricingDetails.production_days} أيام عمل من تاريخ اعتماد التصميم والدفع.</span>
+                  {pricingDetails?.production_days > 0 && (
+                    <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex flex-col gap-1.5 shadow-sm">
+                       <div className="flex items-center justify-between">
+                         <span className="text-blue-400 font-bold text-sm">تاريخ التسليم المتوقع (EDD)</span>
+                         <span className="text-blue-300 font-bold text-xs bg-blue-500/20 px-2.5 py-0.5 rounded-full border border-blue-400/20">
+                           {pricingDetails.production_days === 1
+                             ? 'يوم عمل واحد'
+                             : pricingDetails.production_days === 2
+                               ? 'يومان عمل'
+                               : pricingDetails.production_days <= 10
+                                 ? `${pricingDetails.production_days} أيام عمل`
+                                 : `${pricingDetails.production_days} يوماً عمل`}
+                         </span>
+                       </div>
+                       <span className="text-blue-100/70 text-xs leading-relaxed">
+                         يحتاج هذا الطلب إلى {
+                           pricingDetails.production_days === 1
+                             ? 'يوم عمل واحد'
+                             : pricingDetails.production_days === 2
+                               ? 'يومي عمل'
+                               : pricingDetails.production_days <= 10
+                                 ? `${pricingDetails.production_days} أيام عمل`
+                                 : `${pricingDetails.production_days} يوماً عمل`
+                         } للتجهيز والتنفيذ من تاريخ اعتماد التصميم والدفع.
+                       </span>
                     </div>
                   )}
 
@@ -667,18 +898,18 @@ export default function PrintStation() {
                 <div className={`w-full flex gap-2 ${className}`}>
                   <button 
                     onClick={handleAddToCart}
-                    disabled={!config.mainCategoryId || !isStepValid() || fileStatus === 'processing' || isSubmitting}
+                    disabled={!config.mainCategoryId || !isStepValid() || fileStatus === 'processing' || isSubmitting || isCalculating}
                     className="flex-1 bg-[#1a1a1a] text-white px-3 py-3 md:py-4 rounded-xl md:rounded-full font-bold disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/10 transition-colors border border-white/10 flex items-center justify-center gap-2"
                   >
-                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>إضافة للسلة</span>}
+                    {isSubmitting || isCalculating ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>إضافة للسلة</span>}
                   </button>
 
                   <button 
                     onClick={handleCheckout}
-                    disabled={!config.mainCategoryId || !isStepValid() || fileStatus === 'processing' || isSubmitting}
+                    disabled={!config.mainCategoryId || !isStepValid() || fileStatus === 'processing' || isSubmitting || isCalculating}
                     className="flex-1 bg-yellow-400 text-black px-3 py-3 md:py-4 rounded-xl md:rounded-full font-black disabled:opacity-20 disabled:cursor-not-allowed hover:bg-yellow-300 transition-colors shadow-lg shadow-yellow-400/20 flex items-center justify-center gap-2"
                   >
-                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin text-black" /> : <span>إتمام الطلب</span>}
+                    {isSubmitting || isCalculating ? <Loader2 className="w-5 h-5 animate-spin text-black" /> : <span>إتمام الطلب</span>}
                   </button>
                 </div>
               );
@@ -713,6 +944,7 @@ export default function PrintStation() {
         isOpen={isConfirmModalOpen}
         message="ستفقد جميع اختياراتك الحالية لأنك لم تكمل الطلب. هل أنت متأكد من رغبتك في تغيير القسم؟"
         onConfirm={() => {
+          setActiveStepId('specs');
           resetConfig();
           setIsConfirmModalOpen(false);
         }}

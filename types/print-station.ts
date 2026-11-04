@@ -10,6 +10,14 @@ export interface PrintingProductType {
   printing_types?: PrintingType[];
 }
 
+export interface UploadSlotConfig {
+  id: string;
+  label: string;
+  help_text?: string | null;
+  is_required?: boolean;
+  allowed_extensions?: string[];
+}
+
 export interface PrintingType {
   id: number;
   printing_product_type_id: number;
@@ -18,7 +26,10 @@ export interface PrintingType {
   pricing_method: 'fixed' | 'attributes_only' | 'area';
   is_active: boolean;
   requires_upload: boolean;
-  upload_categories: string[] | null;
+  min_quantity?: number;
+  max_quantity?: number | null;
+  quantity_step?: number;
+  upload_categories: (string | UploadSlotConfig)[] | null;
   upload_rules: {
     max_files_limit?: number | null;
     allow_additional_attachments?: boolean;

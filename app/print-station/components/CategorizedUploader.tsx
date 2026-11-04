@@ -33,8 +33,15 @@ export const CategorizedUploader = ({
   const getRequiredCategories = () => {
     const categories = new Set<string>();
     
-    if (printingType.requires_upload && printingType.upload_categories) {
-      printingType.upload_categories.forEach(cat => categories.add(cat));
+    if (printingType.requires_upload) {
+      const slots = printingType.upload_categories && printingType.upload_categories.length > 0
+        ? printingType.upload_categories
+        : [{ id: 'design', label: 'ملف التصميم الأساسي', is_required: true, allowed_extensions: ['pdf', 'ai', 'psd', 'zip', 'rar'] }];
+
+      slots.forEach((cat: any) => {
+        const catId = typeof cat === 'string' ? cat : cat?.id;
+        if (catId) categories.add(catId);
+      });
     }
     
     printingType.attributes?.forEach(attr => {
@@ -50,6 +57,61 @@ export const CategorizedUploader = ({
     return Array.from(categories);
   };
 
+  const getSlotConfig = (catId: string) => {
+    const found = (printingType.upload_categories || []).find((c: any) => 
+      (typeof c === 'string' ? c : c?.id) === catId
+    );
+
+    if (found && typeof found === 'object') {
+      const allowed = (Array.isArray(found.allowed_extensions) ? found.allowed_extensions : ['pdf', 'ai', 'psd', 'zip', 'rar'])
+        .map((ext: string) => ext.replace(/^\./, '').toLowerCase().trim())
+        .filter(Boolean);
+
+      return {
+        id: found.id,
+        label: found.label || found.id,
+        help_text: found.help_text || null,
+        is_required: Boolean(found.is_required),
+        allowed_extensions: allowed.length > 0 ? allowed : ['pdf', 'ai', 'psd', 'zip', 'rar'],
+      };
+    }
+
+    if (typeof found === 'string') {
+      const map: Record<string, string> = {
+        design: "ملف التصميم الأساسي",
+        spot_uv_mask: "قناع الورنيش الموضعي (Spot UV)",
+        foil_mask: "قناع الفويل / البصمة (Foil)",
+        cutting_guide: "دليل القص / الدايكت (Die-cut)",
+        emboss_mask: "قناع البروز (Embossing)",
+      };
+      return {
+        id: found,
+        label: map[found] || found,
+        help_text: null,
+        is_required: found === 'design',
+        allowed_extensions: ['pdf', 'ai', 'psd', 'zip', 'rar'],
+      };
+    }
+
+    if (catId.startsWith("optional_")) {
+      return {
+        id: catId,
+        label: "مرفق إضافي اختياري",
+        help_text: "يمكنك رفع ملف إضافي اختياري لدعم تفاصيل طلبك",
+        is_required: false,
+        allowed_extensions: ['pdf', 'ai', 'psd', 'zip', 'rar'],
+      };
+    }
+
+    return {
+      id: catId,
+      label: catId === 'design' ? 'ملف التصميم الأساسي' : catId,
+      help_text: null,
+      is_required: false,
+      allowed_extensions: ['pdf', 'ai', 'psd', 'zip', 'rar'],
+    };
+  };
+
   const baseCategories = getRequiredCategories();
   const categories = [...baseCategories, ...additionalCategories];
   const maxLimit = printingType.upload_rules?.max_files_limit || Infinity;
@@ -58,6 +120,19 @@ export const CategorizedUploader = ({
   const handleFileUpload = async (category: string, file: File) => {
     if (file.size > 500 * 1024 * 1024) {
       setUploadErrors(prev => ({ ...prev, [category]: "الملف كبير جداً (الحد الأقصى 500 ميجابايت)" }));
+      return;
+    }
+
+    const slot = getSlotConfig(category);
+    const fileExt = file.name.split('.').pop()?.toLowerCase().trim() || '';
+    const cleanAllowed = slot.allowed_extensions.map(e => e.replace(/^\./, '').toLowerCase().trim());
+
+    if (cleanAllowed.length > 0 && !cleanAllowed.includes(fileExt)) {
+      const allowedStr = cleanAllowed.map(e => '.' + e).join(', ');
+      setUploadErrors(prev => ({ 
+        ...prev, 
+        [category]: `صيغة الملف (.${fileExt}) غير مسموح بها. الصيغ المسموحة: ${allowedStr}` 
+      }));
       return;
     }
 
@@ -138,20 +213,23 @@ export const CategorizedUploader = ({
         const progress = uploadProgress[category] || 0;
         const error = uploadErrors[category];
 
-        let categoryLabel = category;
-        if (category === "design") categoryLabel = "ملف التصميم الأساسي";
-        else if (category === "spot_uv_mask") categoryLabel = "ملف ماسك الـ Spot UV";
-        else if (category === "foil_mask") categoryLabel = "ملف ماسك البصمة";
-        else if (category === "cutting_guide") categoryLabel = "ملف دليل القص (Die-cut)";
-        else if (category.startsWith("optional_")) categoryLabel = "مرفق إضافي اختياري";
+        const slot = getSlotConfig(category);
+        const categoryLabel = slot.label;
+        const acceptString = slot.allowed_extensions.map(ext => `.${ext}`).join(',');
+        const extensionsDisplay = slot.allowed_extensions.map(ext => ext.toUpperCase()).join(', ');
 
         return (
           <div key={category} className="p-6 rounded-3xl border border-white/10 bg-[#111111] flex flex-col gap-4">
             <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-bold text-yellow-400">
-                  {categoryLabel} {!category.startsWith("optional_") && <span className="text-red-500">*</span>}
-                </label>
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <label className="block text-sm font-bold text-yellow-400">
+                    {categoryLabel} {slot.is_required && <span className="text-red-500">*</span>}
+                  </label>
+                  {slot.help_text && (
+                    <p className="text-xs text-gray-400 mt-1">{slot.help_text}</p>
+                  )}
+                </div>
                 {category.startsWith("optional_") && !uploadedFile && progress === 0 && (
                   <button onClick={() => removeFile(category)} className="text-xs text-red-500 hover:text-red-400">
                     إلغاء المرفق
@@ -166,16 +244,16 @@ export const CategorizedUploader = ({
                   <input 
                     type="file" 
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-                    accept=".pdf,.ai,.psd,.zip,.rar"
+                    accept={acceptString}
                     onChange={(e) => {
                       if (e.target.files && e.target.files[0]) {
                         handleFileUpload(category, e.target.files[0]);
                       }
                     }}
                   />
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-col items-center gap-2 text-center px-4">
                     <UploadCloud size={32} />
-                    <span className="text-sm font-bold">اضغط هنا لرفع الملف (PDF, AI, PSD, ZIP)</span>
+                    <span className="text-sm font-bold">اضغط هنا لرفع الملف ({extensionsDisplay})</span>
                   </div>
                 </div>
               )}
