@@ -42,6 +42,7 @@ import { useQuery } from "@tanstack/react-query";
 import { checkFileStatus, getPrintingProductTypes, getPrintingTypeDetails, addPrintJobToCart } from "../../services/api/printingApi";
 import { ConfirmModal } from "@/components/UI/ConfirmModal";
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { useAppContext } from "@/context/AppContext";
 import toast from 'react-hot-toast';
 
@@ -104,7 +105,50 @@ const checkConditionalRules = (
   }
 };
 
+interface OptionCostResult {
+  totalEgp: number;
+  hasPrice: boolean;
+  isFree: boolean;
+}
+
+const calculateOptionCost = (
+  attr: any,
+  val: any,
+  opt: any,
+  quantity: number,
+  imageCount: number = 1,
+  pricingByImageCount: boolean = false
+): OptionCostResult => {
+  const fixed = Number(val?.fixed_price || 0);
+  const unit = Number(val?.unit_price || 0);
+  const multiplierPrice = Number(val?.multiplier_price || 0);
+  const multiplierVal = Math.max(1, Number(opt?.multiplier_value || 1));
+
+  // Determine dynamically if this attribute scales with page/image count
+  // Avoids hardcoding IDs or Arabic names: checks backend group, target, applies_to_pages, or multiplier_number type
+  const isPageSpecific = Boolean(
+    attr?.group === 'pages' ||
+    attr?.target === 'interior' ||
+    attr?.applies_to_pages === true ||
+    (typeof attr?.name === 'string' && (attr.name.toLowerCase().includes('page') || attr.name.toLowerCase().includes('sheet'))) ||
+    attr?.type === 'multiplier_number'
+  );
+
+  const effectivePages = (pricingByImageCount && isPageSpecific) ? Math.max(1, imageCount) : 1;
+  const effectiveQty = quantity * effectivePages;
+
+  const totalCents = fixed + (unit * effectiveQty) + (multiplierPrice * multiplierVal * effectiveQty);
+  const totalEgp = totalCents / 100;
+
+  return {
+    totalEgp,
+    hasPrice: totalCents > 0,
+    isFree: totalCents === 0,
+  };
+};
+
 export default function PrintStation() {
+  const router = useRouter();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [fileStatus, setFileStatus] = useState<string | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -429,12 +473,25 @@ export default function PrintStation() {
     setIsSubmitting(true);
     try {
       const payload = preparePayload();
-      const res = await addPrintJobToCart(payload);
+      await addPrintJobToCart(payload);
+      await refreshCart();
+
+      // Disarm beforeunload guard before routing
+      (window as any).__hasUnsavedPrintConfig = false;
       toast.success('جاري توجيهك لصفحة الدفع... 🚀');
-      window.location.href = '/checkout';
+
+      // Fast SPA client navigation (without router.refresh to prevent lagging /print-station)
+      router.push('/checkout');
+
+      // Fallback after 2500ms if client router is delayed on mobile networks
+      setTimeout(() => {
+        if (typeof window !== 'undefined' && window.location.pathname !== '/checkout') {
+          window.location.assign('/checkout');
+        }
+      }, 2500);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'حدث خطأ أثناء إتمام الطلب.');
-      setIsSubmitting(false);
+      setIsSubmitting(false); // Exclusively in catch to prevent duplicate submissions on slow networks
     }
   };
 
@@ -795,10 +852,34 @@ export default function PrintStation() {
                       if (!attr) return null;
                       const val = attr.values?.find((v: any) => v.id === opt.value_id);
                       if (!val) return null;
+
+                      const pricingByImageCount = Boolean(printingTypeObj?.upload_rules?.pricing_by_image_count);
+                      const cost = calculateOptionCost(
+                        attr,
+                        val,
+                        opt,
+                        config.quantity,
+                        config.image_count || 1,
+                        pricingByImageCount
+                      );
+
                       return (
-                        <div key={attr.id} className="p-3 bg-[#1a1a1a] rounded-xl border border-white/5 flex flex-col gap-1">
-                          <span className="text-xs text-gray-500">{attr.label}</span>
-                          <span className="font-bold text-white text-sm">{val.label}</span>
+                        <div key={attr.id} className="p-3 bg-[#1a1a1a] rounded-xl border border-white/5 flex items-center justify-between gap-2">
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="text-xs text-gray-500">{attr.label}</span>
+                            <span className="font-bold text-white text-sm truncate">{val.label}</span>
+                          </div>
+                          <div className="shrink-0 text-left">
+                            {cost.hasPrice ? (
+                              <span className="text-xs font-bold text-yellow-400 bg-yellow-400/10 px-2.5 py-1 rounded-lg border border-yellow-400/20">
+                                +{cost.totalEgp.toFixed(2)} ج.م
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-semibold text-gray-400 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                                مشمول
+                              </span>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
