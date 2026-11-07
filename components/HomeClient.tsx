@@ -41,7 +41,7 @@ const HERO_MODES = [
     badge: 'خدمات الطباعة',
     BadgeIcon: Printer,
     word1: 'نطبع',
-    word2: 'المستحيل',
+    word2: 'إبداعك',
     description: 'من الفكرة إلى المطبوعة الفاخرة — جودة استثنائية، دقة ألوان لا تُضاهى، ولمسات تشطيب تليق بعلامتك التجارية.',
     ctaText: 'ابدأ مشروعك الآن',
     ctaHref: '/print-station',

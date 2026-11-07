@@ -76,7 +76,7 @@ export default function FontPreview() {
                   إكسبريس
                 </span>
                 <span className="mr-6 text-xs text-white mt-3 italic" style={{ fontFamily: `${f.ar}, sans-serif` }}>
-                  ( نطبع المستحيل )
+                  ( نطبع إبداعك )
                 </span>
               </div>
 
