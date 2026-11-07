@@ -14,6 +14,13 @@ import CustomerTrackingProvider from "@/components/Providers/CustomerTrackingPro
 export const metadata: Metadata = {
   title: "Print Express | طباعة بلا حدود",
   description: "حلول طباعة سريعة وعالية الجودة بأسعار خارج المنافسة — الشريك الأول لك في الطباعة.",
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    apple: '/apple-icon.png',
+  },
 };
 
 export default function RootLayout({
