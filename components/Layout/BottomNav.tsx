@@ -17,7 +17,11 @@ export default function BottomNav() {
 
   useEffect(() => {
     fetchChatSettings().then((s) => {
-      if (s?.whatsappNumber) setWhatsappNumber(s.whatsappNumber);
+      if (s?.whatsappNumber && s.whatsappNumber !== "01000000000" && !s.whatsappNumber.includes("000000")) {
+        setWhatsappNumber(s.whatsappNumber);
+      } else {
+        setWhatsappNumber("01011348890");
+      }
       if (s?.whatsappDefaultMessage) setWhatsappMsg(s.whatsappDefaultMessage);
     });
   }, []);

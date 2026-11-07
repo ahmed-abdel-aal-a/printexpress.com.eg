@@ -36,7 +36,12 @@ export default function FloatingWidgets() {
   // 1. Fetch Chat & WhatsApp Settings on Mount
   useEffect(() => {
     fetchChatSettings().then((data) => {
-      if (data) setSettings(data);
+      if (data) {
+        if (!data.whatsappNumber || data.whatsappNumber === "01000000000" || data.whatsappNumber.includes("000000")) {
+          data.whatsappNumber = "01011348890";
+        }
+        setSettings(data);
+      }
     });
   }, []);
 

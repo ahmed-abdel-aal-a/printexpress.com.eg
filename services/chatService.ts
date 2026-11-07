@@ -28,16 +28,25 @@ export type StorefrontFAQ = {
  * Format phone number into WhatsApp direct chat URL
  */
 export function formatWhatsAppUrl(phone?: string, text?: string): string {
-  if (!phone) return "#";
+  // If phone is missing, null, or placeholder 01000000000, always enforce official number 01011348890
+  let targetPhone = phone;
+  if (!targetPhone || targetPhone === "01000000000" || targetPhone.includes("000000")) {
+    targetPhone = "01011348890";
+  }
   
   // Clean phone string: remove spaces, dashes, parentheses, plus
-  let cleaned = phone.replace(/[^0-9]/g, "");
+  let cleaned = targetPhone.replace(/[^0-9]/g, "");
 
   // If local Egyptian mobile format (e.g. 010..., 011..., 012..., 015...), convert to international 201...
   if (cleaned.startsWith("01") && cleaned.length === 11) {
     cleaned = "2" + cleaned;
   } else if (cleaned.startsWith("1") && cleaned.length === 10) {
     cleaned = "20" + cleaned;
+  }
+
+  // Safety net against placeholder
+  if (cleaned === "201000000000" || cleaned === "01000000000") {
+    cleaned = "201011348890";
   }
 
   const query = text ? `?text=${encodeURIComponent(text)}` : "";
@@ -51,7 +60,11 @@ export async function fetchChatSettings(): Promise<ChatSettings> {
     });
     if (!res.ok) throw new Error("Failed to fetch chat settings");
     const json = await res.json();
-    return json.data;
+    const data = json.data;
+    if (!data.whatsappNumber || data.whatsappNumber === "01000000000" || data.whatsappNumber.includes("000000")) {
+      data.whatsappNumber = "01011348890";
+    }
+    return data;
   } catch (error) {
     console.error("Error fetching chat settings:", error);
     return {
