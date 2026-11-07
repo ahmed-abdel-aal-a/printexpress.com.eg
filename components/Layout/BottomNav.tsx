@@ -12,7 +12,7 @@ export default function BottomNav() {
   const pathname = usePathname();
   const { setIsChatOpen } = useAppContext();
   const [showContactMenu, setShowContactMenu] = useState(false);
-  const [whatsappNumber, setWhatsappNumber] = useState("01000000000");
+  const [whatsappNumber, setWhatsappNumber] = useState("01011348890");
   const [whatsappMsg, setWhatsappMsg] = useState("");
 
   useEffect(() => {

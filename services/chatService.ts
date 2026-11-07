@@ -59,7 +59,7 @@ export async function fetchChatSettings(): Promise<ChatSettings> {
       messageText: "مرحباً بك في Print Express! كيف يمكننا مساعدتك اليوم؟",
       displayLocation: "chat_only",
       themeColor: "#f59e0b",
-      whatsappNumber: "01000000000",
+      whatsappNumber: "01011348890",
       whatsappEnabled: true,
       whatsappDefaultMessage: "مرحباً، أود الاستفسار عن خدمات ومنتجات Print Express.",
     };
